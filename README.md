@@ -85,13 +85,16 @@ node mcp/test-supermemory.mjs
 
 ## What's in the repo
 
-- `mcp/` — the Supermemory-backed MCP server, Stop-hook extractor, store client, and tests (**the hackathon integration lives here**)
-- `app/`, `lib/` — Imprint's original Next.js dashboard (memory graph, analytics), from the pre-existing [Imprint](https://github.com/yashasvithakur/imprint) project
+- `mcp/server.js` — the MCP server: 9 memory tools over Supermemory
+- `mcp/supermemory-store.js` — the Supermemory API client (`/v4/memories`, `/v4/search`, `/v3/documents`)
+- `mcp/intelligence.js` — contradiction detection, ranking (recency decay + access boost), memory rules
+- `mcp/extract-and-save.js` — Claude Code Stop hook: guaranteed fact extraction after every response
+- `mcp/test-supermemory.mjs` — 16 end-to-end assertions
 - `scripts/dev/mock-supermemory.mjs` — dev-only mock of the Local API for Windows development
 
 ## Provenance
 
-This project builds on [Imprint](https://github.com/yashasvithakur/imprint), my existing open-source memory layer (pre-dates the hackathon). **Written fresh during the build window (July 9–13):** the entire Supermemory integration — `mcp/supermemory-store.js`, the rewritten `mcp/server.js`, the rewired `mcp/extract-and-save.js`, the mock server, and the test suite — replacing Imprint's DynamoDB + Jina + custom retrieval stack with Supermemory Local.
+The concept and tool design come from [Imprint](https://github.com/yashasvithakur/imprint), my open-source memory layer that pre-dates the hackathon. **Built during the window (July 9–13):** the Supermemory store client, the MCP server, the intelligence layer (contradiction detection via Supermemory search, ranking, memory rules), the dev mock, and the test suite — replacing Imprint's DynamoDB + Jina + custom sync/retrieval stack with Supermemory Local as the single memory engine. The Stop-hook extractor reuses Imprint's transcript parser and extraction prompts (treated as boilerplate, per the rules), rewired to save into Supermemory. Nothing else from Imprint — no dashboard, no hosted API, no local store — ships in this repo.
 
 ## License
 
