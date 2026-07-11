@@ -93,11 +93,11 @@ function connectHint(e) {
 
 const TOPICS = ["work", "personal", "preferences", "projects", "health", "relationships", "general"];
 
-function toSupermemory({ content, topic = "general", pinned = false, source = "imprint" }) {
+function toSupermemory({ content, topic = "general", pinned = false, source = "imprint", confidence = 0.8 }) {
   return {
     content,
     isStatic: !!pinned,
-    metadata: { topic: TOPICS.includes(topic) ? topic : "general", pinned: !!pinned, source },
+    metadata: { topic: TOPICS.includes(topic) ? topic : "general", pinned: !!pinned, source, confidence },
   };
 }
 
@@ -109,6 +109,7 @@ export function fromSupermemory(entry) {
     topic: TOPICS.includes(meta.topic) ? meta.topic : "general",
     pinned: !!(meta.pinned || entry.isStatic),
     source: meta.source || "supermemory",
+    confidence: typeof meta.confidence === "number" ? meta.confidence : 0.8,
     createdAt: entry.createdAt || entry.updatedAt,
     updatedAt: entry.updatedAt,
     similarity: entry.similarity,

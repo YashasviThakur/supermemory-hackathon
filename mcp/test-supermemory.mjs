@@ -17,10 +17,14 @@ import { dirname, join } from "path";
 const PORT = 6768; // scratch port — never collides with a real local server
 process.env.SUPERMEMORY_BASE_URL = process.env.SUPERMEMORY_TEST_URL || `http://localhost:${PORT}`;
 process.env.SUPERMEMORY_CONTAINER_TAG = `imprint_test_${Date.now()}`;
+// Contradiction checks route to the mock's fake Groq endpoint (offline test).
+process.env.GROQ_BASE_URL = process.env.SUPERMEMORY_BASE_URL;
+process.env.GROQ_API_KEY = process.env.GROQ_API_KEY || "gsk_test_offline";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
 const store = await import("./supermemory-store.js");
+const intel = await import("./intelligence.js");
 
 let mock = null;
 async function ensureServer() {
@@ -94,6 +98,36 @@ try {
   // status
   const s = await store.status();
   assert("status reports reachable server", s.reachable && typeof s.total === "number");
+
+  // ── intelligence layer ──────────────────────────────────
+
+  // contradiction detection (candidates from Supermemory search, verdict from LLM)
+  await store.saveMemory({ content: "The user prefers dark mode.", topic: "preferences" });
+  const conflicts = await intel.detectContradictions("The user prefers light mode.");
+  assert("detectContradictions flags a genuine conflict",
+    conflicts.some((c) => /dark mode/.test(c.existingMemoryContent)), JSON.stringify(conflicts));
+  const noConflicts = await intel.detectContradictions("The user prefers dark mode.");
+  assert("detectContradictions ignores the same fact reworded", noConflicts.length === 0, JSON.stringify(noConflicts));
+
+  // ranking: pinned floats to 2.0, newer beats older, access boost lifts score
+  const old = { memoryId: "a", content: "old", confidence: 0.9, createdAt: new Date(Date.now() - 30 * 86_400_000).toISOString(), pinned: false };
+  const fresh = { memoryId: "b", content: "new", confidence: 0.9, createdAt: new Date().toISOString(), pinned: false };
+  const pinnedMem = { memoryId: "c", content: "pin", confidence: 0.1, createdAt: old.createdAt, pinned: true };
+  const ranked = intel.rankMemories([old, fresh, pinnedMem]);
+  assert("ranking puts pinned first", ranked[0].memoryId === "c");
+  assert("ranking prefers newer memories (14-day half-life decay)", ranked[1].memoryId === "b");
+  assert("access boost lifts a memory's score",
+    intel.scoreMemory(old, { a: 10 }) > intel.scoreMemory(old, {}));
+
+  // memory rules: disabling a topic filters extracted facts
+  intel.setRule("health", false);
+  const kept = intel.applyRules([
+    { content: "User has a cold.", topic: "health" },
+    { content: "User builds MCP servers.", topic: "work" },
+  ]);
+  assert("memory rules filter disabled topics from auto-save",
+    kept.length === 1 && kept[0].topic === "work", JSON.stringify(kept));
+  intel.setRule("health", true); // restore default
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exitCode = failed ? 1 : 0;

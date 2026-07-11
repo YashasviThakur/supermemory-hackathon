@@ -27,6 +27,14 @@ import {
   updateMemory,
   status,
 } from "./supermemory-store.js";
+import {
+  detectContradictions,
+  rankMemories,
+  recordAccess,
+  loadRules,
+  setRule,
+  RULES_FILE,
+} from "./intelligence.js";
 
 const PLATFORM = process.env.IMPRINT_PLATFORM || "claude-code";
 
@@ -100,10 +108,12 @@ server.tool(
         const seen = new Set(memories.map((m) => m.memoryId));
         memories = [...pinned.filter((m) => !seen.has(m.memoryId)), ...memories];
       } else {
-        memories = await listMemories({ limit: opt ? 200 : limit });
+        // No query → rank by pinned > confidence × recency decay × access boost.
+        memories = rankMemories(await listMemories({ limit: 200 }));
         if (topic && topic !== "all") memories = memories.filter((m) => m.topic === topic);
-        if (opt) memories = optimize(memories, budget);
+        memories = opt ? optimize(memories, budget) : memories.slice(0, limit);
       }
+      recordAccess(memories);
       const pinCount = memories.filter((m) => m.pinned).length;
       const header = query
         ? `${memories.length} relevant memories for "${query}" (${pinCount} pinned):\n\n`
@@ -127,8 +137,16 @@ server.tool(
   },
   async ({ content, topic, pinned = false }) => {
     try {
+      // Contradiction candidates must not include the fact itself — check first.
+      const contradictions = await detectContradictions(content);
       await saveMemory({ content, topic, pinned, source: PLATFORM });
-      return { content: [{ type: "text", text: `✅ Saved: [${topic}] ${content}${pinned ? " 📌" : ""}` }] };
+      let text = `✅ Saved: [${topic}] ${content}${pinned ? " 📌" : ""}`;
+      if (contradictions.length) {
+        text += `\n\n⚠️ This may contradict ${contradictions.length} existing memor${contradictions.length === 1 ? "y" : "ies"}:`;
+        for (const c of contradictions) text += `\n  • "${c.existingMemoryContent}" — ${c.explanation}`;
+        text += `\n\nTell me which is correct and I'll update or delete the stale one.`;
+      }
+      return { content: [{ type: "text", text }] };
     } catch (e) {
       return { content: [{ type: "text", text: `Error: ${e.message}` }], isError: true };
     }
@@ -143,6 +161,7 @@ server.tool(
     try {
       const results = await searchMemories(query, { limit: 10 });
       if (!results.length) return { content: [{ type: "text", text: `No memories found for "${query}".` }] };
+      recordAccess(results);
       return { content: [{ type: "text", text: `${results.length} results for "${query}":\n\n${format(results)}` }] };
     } catch (e) {
       return { content: [{ type: "text", text: `Error: ${e.message}` }], isError: true };
@@ -216,6 +235,27 @@ server.tool(
     try {
       await updateMemory(memoryId, { content, topic });
       return { content: [{ type: "text", text: `✅ Updated${content ? `: ${content}` : ""} (previous version kept in history).` }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `Error: ${e.message}` }], isError: true };
+    }
+  }
+);
+
+server.tool(
+  "memory_rules",
+  "View or change which topics are auto-saved by the memory extraction hook. Call with no arguments to see the current rules; pass topic + enabled to flip one (e.g. the user says 'stop saving health stuff').",
+  {
+    topic: z.enum(["work","personal","preferences","projects","health","relationships","general"]).optional(),
+    enabled: z.boolean().optional().describe("Required when topic is given: true = auto-save this topic, false = never auto-save it."),
+  },
+  async ({ topic, enabled }) => {
+    try {
+      const rules = topic !== undefined && enabled !== undefined ? setRule(topic, enabled) : loadRules();
+      const lines = Object.entries(rules.topics).map(([t, on]) => `  ${on ? "✅" : "🚫"} ${t}`);
+      const header = topic !== undefined && enabled !== undefined
+        ? `✅ Auto-save for "${topic}" turned ${enabled ? "ON" : "OFF"}.\n\n`
+        : "";
+      return { content: [{ type: "text", text: `${header}Auto-save rules (${RULES_FILE}):\n${lines.join("\n")}\n\nExplicit save_memory calls always work — rules only gate the automatic Stop-hook extraction.` }] };
     } catch (e) {
       return { content: [{ type: "text", text: `Error: ${e.message}` }], isError: true };
     }

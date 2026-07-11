@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { saveMemory, saveMemories, ingestDocument, CONTAINER_TAG } from "./supermemory-store.js";
+import { applyRules } from "./intelligence.js";
 
 const GROQ_KEY = process.env.GROQ_API_KEY;
 const INGEST_TRANSCRIPT = process.env.IMPRINT_INGEST_TRANSCRIPT === "1";
@@ -223,7 +224,13 @@ async function saveFact({ content, topic }) {
 async function saveFacts(facts) {
   try {
     await saveMemories(
-      facts.map((f) => ({ content: f.content, topic: f.topic || "general", pinned: false, source: "stop-hook" }))
+      facts.map((f) => ({
+        content: f.content,
+        topic: f.topic || "general",
+        pinned: false,
+        source: "stop-hook",
+        confidence: f.confidence || 0.75,
+      }))
     );
   } catch (e) {
     process.stderr.write(`[Imprint hook] batch save failed: ${e.message}\n`);
@@ -336,6 +343,9 @@ async function main() {
 
     // Only save reasonably confident facts (Groq scores 0-1; regex defaults to 0.75).
     facts = facts.filter(f => (f.confidence || 0) >= 0.65);
+
+    // Honor the user's per-topic auto-save rules (~/.imprint-supermemory/rules.json).
+    facts = applyRules(facts);
 
     if (!facts.length) return;
 

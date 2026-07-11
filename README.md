@@ -11,7 +11,10 @@ Your AI coding assistant forgets you the moment a session ends. Imprint fixes th
 In this project, the entire storage/retrieval brain is **Supermemory Local**:
 
 - **Every memory lives in Supermemory** at `http://localhost:6767` — embeddings, semantic search, versioning, and de-duplication all happen on your machine. No AWS, no Jina, no cloud database. Nothing leaves your laptop.
-- **8 MCP tools** (`get_memories`, `save_memory`, `search_memories`, `delete_memory`, `pin_memory`, `update_memory`, `summarize_session`, `sync_status`) are thin veneers over Supermemory's `/v4/memories` and `/v4/search` APIs.
+- **9 MCP tools** (`get_memories`, `save_memory`, `search_memories`, `delete_memory`, `pin_memory`, `update_memory`, `summarize_session`, `memory_rules`, `sync_status`) are thin veneers over Supermemory's `/v4/memories` and `/v4/search` APIs.
+- **Contradiction detection** — on every save, the new fact is checked against its most semantically similar existing memories. Candidate selection is Supermemory's own `/v4/search` (the job embeddings used to do), and a strict "could both be true at once?" LLM check confirms genuine conflicts: *"You said you prefer dark mode, but this says you prefer light mode."*
+- **Smart ranking** — memory lists are ordered by pinned-first, then confidence × recency decay (14-day half-life) × access boost (up to +50% for frequently injected facts).
+- **Memory rules** — per-topic auto-save switches (`memory_rules` tool): tell the agent "stop saving health stuff" and the extraction hook respects it.
 - **Guaranteed capture**: a Claude Code Stop hook extracts facts after every response (Groq LLM with regex fallback) and batch-saves them to Supermemory — even when the model forgets to call `save_memory`. Set `IMPRINT_INGEST_TRANSCRIPT=1` and the raw dialogue is also handed to Supermemory's own extraction pipeline via `POST /v3/documents`.
 - **Pinned = static.** Imprint's "pinned" memories map to Supermemory's `isStatic` permanent facts, and are merged into every retrieval so they can never be filtered out by relevance limits.
 - **Versioned corrections.** "Actually, change that to…" uses `PATCH /v4/memories` — Supermemory keeps the old value in the memory's history instead of losing it.
@@ -78,7 +81,7 @@ Talk to your agent normally. Facts about you are saved as you work; open a new s
 node mcp/test-supermemory.mjs
 ```
 
-10 end-to-end assertions covering save, batch save, list, semantic search, versioned update, pin round-trip, forget, transcript ingestion, and status. The suite runs against `SUPERMEMORY_TEST_URL` if set; otherwise it spins up `scripts/dev/mock-supermemory.mjs` — a tiny dev stand-in for the Local API used on machines that can't run the real binary (it ships for macOS/Linux only).
+16 end-to-end assertions covering save, batch save, list, semantic search, versioned update, pin round-trip, forget, transcript ingestion, status, contradiction detection (flags genuine conflicts, ignores rewordings), ranking (pinned-first, recency decay, access boost), and memory rules. The suite runs against `SUPERMEMORY_TEST_URL` if set; otherwise it spins up `scripts/dev/mock-supermemory.mjs` — a tiny dev stand-in for the Local API used on machines that can't run the real binary (it ships for macOS/Linux only).
 
 ## What's in the repo
 

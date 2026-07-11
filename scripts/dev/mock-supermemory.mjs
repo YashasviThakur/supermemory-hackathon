@@ -129,6 +129,33 @@ const routes = {
     return [200, { id: e.id, version: e.version }];
   },
 
+  // Fake Groq chat-completions endpoint so the contradiction detector can be
+  // tested offline (point GROQ_BASE_URL here). Flags "prefers X" vs
+  // "prefers Y" style conflicts with a canned response.
+  "POST /openai/v1/chat/completions": (body) => {
+    const user = (body.messages || []).find((m) => m.role === "user")?.content || "";
+    const a = user.match(/Fact A \(new\): "([^"]*)"/)?.[1] || "";
+    const b = user.match(/Fact B \(stored\): "([^"]*)"/)?.[1] || "";
+    // Only flag known-opposite preference pairs — mirrors the real LLM's
+    // strictness ("prefers TypeScript" vs "prefers dark mode" is NOT a conflict).
+    const OPPOSITES = [["dark mode", "light mode"], ["tabs", "spaces"], ["vim", "emacs"]];
+    const pa = a.match(/prefers\s+([\w\s]+)/i)?.[1]?.trim().toLowerCase();
+    const pb = b.match(/prefers\s+([\w\s]+)/i)?.[1]?.trim().toLowerCase();
+    const contradicts = !!(pa && pb && OPPOSITES.some(([x, y]) =>
+      (pa.includes(x) && pb.includes(y)) || (pa.includes(y) && pb.includes(x))));
+    return [200, {
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            contradicts,
+            reason: contradicts ? `You said you prefer ${pb}, but this says you prefer ${pa}.` : "",
+            confidence: contradicts ? 0.9 : 0.2,
+          }),
+        },
+      }],
+    }];
+  },
+
   "POST /v3/documents": (body) => {
     // Real Supermemory extracts memories from the document; the mock just
     // stores one memory per non-empty line that looks like a user statement.
