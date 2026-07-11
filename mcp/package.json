@@ -1,0 +1,21 @@
+{
+  "name": "imprint-supermemory",
+  "version": "3.0.0",
+  "description": "Imprint MCP server — persistent memory for AI coding agents, powered by Supermemory Local (localhost:6767)",
+  "main": "server.js",
+  "type": "module",
+  "bin": {
+    "imprint-supermemory": "./server.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test-supermemory.mjs",
+    "mock": "node ../scripts/dev/mock-supermemory.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.0.0"
+  },
+  "keywords": ["claude", "memory", "mcp", "imprint", "supermemory", "localhost-6767"],
+  "license": "MIT"
+}
